@@ -1,52 +1,50 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Configuration;
-using System.Data;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
-using Tam.QRCode;
 
-namespace ConsumerQRCode
+namespace Tam.QRCode
 {
-    public partial class Form1 : Form
+    public class BootQR
     {
-        const int MAX_LENGTH_PER_PART = 500;
+        private const int MAX_LENGTH_PER_PART = 800;
+        private static Object LockFile = new Object();
 
         public string ContainerQrFolder
         {
-            get
-            {
-                return ConfigurationManager.AppSettings["ContainerQrFolder"].ToString();
-            }
+            get;
+            set;
         }
 
         public string ContainerTextFolder
         {
-            get
-            {
-                return ConfigurationManager.AppSettings["ContainerTextFolder"].ToString();
-            }
+            get;
+            set;
         }
 
-        public Form1()
+        public BootQR(string containerQrFolder, string containerTextFolder)
         {
-            InitializeComponent();
-            CenterToScreen();
-            pictureBoxQRCode.BackgroundImageLayout = ImageLayout.Zoom;
+            if (string.IsNullOrWhiteSpace(containerQrFolder))
+            {
+                throw new ArgumentNullException(containerQrFolder);
+            }
+            if (string.IsNullOrWhiteSpace(containerTextFolder))
+            {
+                throw new ArgumentNullException(containerTextFolder);
+            }
+            this.ContainerQrFolder = containerQrFolder;
+            this.ContainerTextFolder = containerTextFolder;
         }
 
-        private string ReadFileAndRemoveWhiteSpaceLine(string filePath)
+        private static string ReadFileAndRemoveWhiteSpaceLine(string filePath)
         {
             string content = File.ReadAllText(filePath);
             var lines = File.ReadAllLines(filePath);
             var builderContent = new StringBuilder();
+            builderContent.AppendLine(string.Format(@"\\{0}", filePath));
             foreach (var line in lines)
             {
                 // content of file (we don't need white space line)
@@ -58,12 +56,12 @@ namespace ConsumerQRCode
             return builderContent.ToString();
         }
 
-        private string[] GetAllFilesOfFolder(string folder) // no recusive
+        private static string[] GetAllFilesOfFolder(string folder) // no recusive
         {
             return Directory.GetFiles(folder);
         }
 
-        private string CreateFileName(string filePath)
+        private static string CreateFileName(string filePath)
         {
             string fileName = filePath.Replace(":", "");
             fileName = fileName.Replace(@"\", "@");
@@ -109,7 +107,7 @@ namespace ConsumerQRCode
             RenderQRCode(@"E:\Project2\Blog2\trunk\Tam.Framework\Core\Tam.Util\StringHelper.cs");
         }
 
-        private Bitmap CreateQrBitmap(string content)
+        private static Bitmap CreateQrBitmap(string content)
         {
             QRCodeGenerator.ECCLevel eccLevel = QRCodeGenerator.ECCLevel.Q;
             QRCodeGenerator qrGenerator = new QRCodeGenerator();
@@ -119,17 +117,40 @@ namespace ConsumerQRCode
             return bitmap;
         }
 
-        private void SaveQrBitmap(Bitmap bitmap, string fullFilePath)
+        private static void SaveQrBitmap(Bitmap bitmap, string fullFilePath)
         {
             bitmap.Save(fullFilePath);
         }
 
-        private void DoProcess()
+        public void Done(string folder)
+        {
+            try
+            {
+                string filePath = Path.Combine(folder, "result.txt");
+                lock (LockFile)
+                {
+                    StreamWriter writer = new StreamWriter(filePath, true);
+                    writer.WriteLine("Date/Time: " + DateTime.Now.ToLongDateString() + "  " + DateTime.Now.ToLongTimeString());
+                    writer.WriteLine("Done");
+                    writer.WriteLine("================================================================");
+                    writer.WriteLine();
+                    writer.Flush();
+                    writer.Close();
+                }
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+        }
+
+        public void DoProcess()
         {
             string[] files = GetAllFilesOfFolder(ContainerTextFolder);
             string contentOfFile = string.Empty;
             foreach (var item in files)
             {
+                string fileName = CreateFileName(item);
                 contentOfFile = ReadFileAndRemoveWhiteSpaceLine(item);
                 int lengthOfText = contentOfFile.Length;
                 int part = (lengthOfText / MAX_LENGTH_PER_PART) + 1;
@@ -138,7 +159,6 @@ namespace ConsumerQRCode
                 string temp = string.Empty;
 
                 string fileNameOfQrPicture = string.Empty;
-                string fileName = CreateFileName(item);
 
                 for (int i = 0; i < part; i++)
                 {
@@ -155,28 +175,7 @@ namespace ConsumerQRCode
                     SaveQrBitmap(CreateQrBitmap(temp), fileNameOfQrPicture);
                 }
             }
-        }
-
-        private void Form1_Load(object sender, EventArgs e)
-        {
-
-        }
-
-        private void btnGenerateQRCode_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                //RenderQRCode();
-                //DoProcess();
-                var qr = new BootQR(this.ContainerQrFolder, this.ContainerTextFolder);
-                qr.DoProcess();
-                Thread thread = new Thread(new ThreadStart(qr.DoProcess));
-                thread.Start();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
+            Done(this.ContainerQrFolder);
         }
     }
 }
